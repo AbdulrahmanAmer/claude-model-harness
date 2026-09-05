@@ -407,3 +407,52 @@ scripts/install.sh: line 98: …/hh-selftest/harness.log: No such file or direct
   reply: MODEL IDENTITY: not detectable by the harness at this point (Claude Code did not pass a model field). If your system prompt states your model, that is authoritative — use it; otherwise state your exact model ID in your f…
 selftest exit=0
 ```
+### 6.8 Chunk F — publish (HANDOFF Chunk 3)
+
+```
+$ git log --oneline | head -3
+c59679f 0.2.0: in-process hook watchdog, HTTPS marketplace URL, installer fixes
+b9d2a3d claude-model-harness 0.2.0: every current Claude model
+$ gh repo view AbdulrahmanAmer/claude-model-harness --json visibility,url --jq '.visibility + " " + .url'
+PUBLIC https://github.com/AbdulrahmanAmer/claude-model-harness
+```
+CI (`.github/workflows/test.yml`, matrix ubuntu/macos × Python 3.10/3.12). The first push failed one job — macOS has no `timeout(1)`, so `test_timeout_never_blocks` waited the full 30 s (`FAILED tests/test_failopen.py::test_timeout_never_blocks - subprocess.TimeoutExpired`, `1 failed, 75 passed`). Fix: the CLI now runs its own watchdog for hook commands (exit 124, no stdout, `cli_timeout` logged) and the test exercises it. Second run:
+```
+$ gh run view 33942284879
+✓ main test · 33942284879
+✓ test (macos-latest, 3.10) in 36s
+✓ test (ubuntu-latest, 3.10) in 16s
+✓ test (macos-latest, 3.12) in 22s
+✓ test (ubuntu-latest, 3.12) in 14s
+```
+Local suite at the same commit (Windows): `75 passed, 2 skipped in 37.03s`.
+
+Release:
+```
+$ gh release create v0.2.0 --title "claude-model-harness 0.2.0" -F RELEASE_NOTES.md --target main
+https://github.com/AbdulrahmanAmer/claude-model-harness/releases/tag/v0.2.0
+$ gh release view v0.2.0 …   -> v0.2.0 draft=false 2026-09-05T03:36:39Z
+```
+
+Install from GitHub, isolated config (`CLAUDE_CONFIG_DIR=C:/Users/DELL/AppData/Local/Temp/cmh-cfg`, nothing in the user's real config changed):
+```
+$ sh scripts/install.sh --repo AbdulrahmanAmer/claude-model-harness --no-selftest
+Adding GitHub marketplace: https://github.com/AbdulrahmanAmer/claude-model-harness.git
+Installing plugin claude-model-harness@claude-model-harness (user scope)
+Installing plugin "claude-model-harness@claude-model-harness"...✔ Successfully installed plugin: claude-model-harness@claude-model-harness (scope: user)
+  plugin listed: yes
+  plugin validate: ok
+$ claude plugin list
+  ❯ claude-model-harness@claude-model-harness
+    Version: 0.2.0
+    Scope: user
+    Status: ✔ enabled
+```
+Two things found on the way and fixed: `claude plugin marketplace add AbdulrahmanAmer/claude-model-harness` (the `owner/repo` shorthand) tried an SSH clone (`git@github.com: Permission denied (publickey)`) on this machine, so the installer now passes the full HTTPS URL, which the docs list as an accepted form [S25]; and a very long `CLAUDE_CONFIG_DIR` made git fail with "Filename too long" on Windows (test-environment artefact, not the plugin).
+
+### 6.9 What was NOT done in this run
+- Interactive checks that need a terminal: the `/hooks` menu listing, and an interactive `/model` switch to observe `PostModelSwitch` with `to_model`. The headless stand-in (`--resume … --model`) fired no PostModelSwitch, so that hook remains **UNPROVEN** live; the code path is unit-tested only.
+- `SessionStart.model` was absent in every headless run on both Linux and Windows; whether interactive sessions carry it is still unobserved.
+- The per-model runs used `--allowedTools` pre-approval and `--max-turns 12`; they are single runs, not a benchmark.
+- Python 3.10 on this machine has no pytest; 3.10 coverage comes from CI (green).
+
