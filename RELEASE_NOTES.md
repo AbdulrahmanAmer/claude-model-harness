@@ -1,3 +1,11 @@
+# claude-model-harness 0.2.1
+
+Patch release from the first real builds. The chunk-mode scope lock now covers Bash (a Sonnet 5 build had widened its own chunk plan through a heredoc, unseen by the Edit/Write-only lock), protects the plan file, reports post-activation scope widening, and does not misread arrows, comparisons or heredoc bodies as shell redirects (an Opus 5 smoke test had been denied for `n => n.textContent`). Also carries the post-0.2.0 gate fixes (latest acceptance run wins; hook feedback is not a new turn; `/chunk plan` passes the model ID). Suite: 82 passed, 2 skipped. Details in CHANGELOG.md and `tests/REPORT.md` §6.10.
+
+Upgrade: `claude plugin update claude-model-harness@claude-model-harness`
+
+---
+
 # claude-model-harness 0.2.0
 
 A Claude Code plugin that tells the model which model it is, loads Anthropic's official guidance for **that** model, and gates "done" claims on real evidence. 0.2.0 extends the Opus 5 harness to every current Claude model: Fable 5.1 / 5 (Mythos), Opus 5, Opus 4.8 / 4.7 / 4.6 / 4.5, Sonnet 5 / 4.6 / 4.5 and Haiku 4.5. Every behavioural claim cites an official Anthropic page (`research/SOURCES.md`, 63 sources; `research/MODEL_MATRIX.md`, one cited row per model, quote-checked against a same-day mirror).

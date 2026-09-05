@@ -456,3 +456,29 @@ Two things found on the way and fixed: `claude plugin marketplace add Abdulrahma
 - The per-model runs used `--allowedTools` pre-approval and `--max-turns 12`; they are single runs, not a benchmark.
 - Python 3.10 on this machine has no pytest; 3.10 coverage comes from CI (green).
 
+### 6.10 0.2.1 — scope lock on Bash, measured on four real builds (Windows, 2026-09-05)
+
+Setup: one SPEC.md (a cashier / point-of-sale app, sections A–L) built four times with the same tools: Sonnet 5 and Opus 5 through `/chunk` mode with this plugin installed, and the same two models as one autonomous `claude -p` session with the plugin disabled (`--settings '{"enabledPlugins": {"claude-model-harness@claude-model-harness": false}}'`).
+
+What the lock caught and missed live (from each build's `.harness-home/harness.log`):
+```
+sonnet  04:04:40  Bash heredoc rewrote .claude/harness/chunks.json (added app/main.py, app/routers/__init__.py to chunks 2-7)  -> NOT seen by the Edit/Write-only lock (0.2.0)
+sonnet  08:20:47  {"event": "scope_lock", "file": "chunks.json", "chunk": 8, "mode": "deny", "via": "bash", "command": "cd \"E:/projects/cashier-app-sonnet\" && python3 - <<'EOF'
+import json
+p = \".clau"}   (0.2.1 lock, denied)
+opus    08:18:37  {"event": "scope_lock", "file": "n.textCo", "chunk": 7, "mode": "deny", "via": "bash", "command": "cd $TEMP && python - <<'PYEOF'
+from playwright.sync_api import sync_playwright ..."}   (false positive, fixed in 15d802d)
+```
+
+Plugin builds (cost/turns from Claude Code's own `total_cost_usd` / `num_turns` per session; pytest run independently by the comparison panel on the finished tree):
+```
+Sonnet 5 + plugin   9 chunks   $17.85   205 turns   1 h 47 min   gate_block 4 / gate_allow 9   scope_lock 2   118 passed in 232.41s
+Opus 5  + plugin    8 chunks   $42.66   135 turns   1 h 37 min   gate_block 3 / gate_allow 9   scope_lock 2   365 passed in 636.95s
+```
+No-plugin controls: interrupted by a usage limit after 26 min (Claude Code reported `subtype: "success", is_error: true` with the limit message as `result`), resumed with `claude -p --resume <session_id>`; final figures land in the panel and in a follow-up section once they finish. Independent spec audit of the Opus plugin app (10 of 12 sections at the time of release): A 1, B 1, C 1, D 0.5, E 0.5, F 1, G 1, H 0.5, I 1, J 1 — the three partial sections are real defects the model's own 302 tests did not catch (shift closable with an open sale; discount-threshold override bypassed by deleting a line afterwards; over-return through a duplicated line id).
+
+Suite before tagging:
+```
+$ python -m pytest -q --timeout=200 tests
+82 passed, 2 skipped in 271.82s (0:04:31)
+```

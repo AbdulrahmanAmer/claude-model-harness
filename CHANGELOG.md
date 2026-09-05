@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-09-05
+- Scope lock covers Bash. Seen live on the first Sonnet 5 chunk build: the model rewrote `.claude/harness/chunks.json` through a Bash heredoc to add files to its own chunk (chunks 2 and 7), which the Edit/Write-only lock never saw. PreToolUse now also matches Bash: any command touching the plan file other than the harness CLI is denied; shell writes (`>`, `>>`, `tee`, `sed -i`, `cp`, `mv`) and scripted writes (`open(f, "w")`, `write_text`) to out-of-scope project files are denied; the Stop gate reports paths added to a chunk after activation as a scope change (`plan_modified`).
+- No false positives from the new lock: arrows (`=>`, `->`), comparisons (`>=`) and heredoc bodies are not shell redirects (seen live: an Opus 5 Playwright smoke test was denied because `n => n.textContent` matched the redirect pattern); writes outside the project directory are not the plan's business.
+- Ships the two post-0.2.0 gate fixes already described under 0.2.0 (latest acceptance run wins; hook feedback is not a new turn; `/chunk plan` passes the model's ID): they were committed after the v0.2.0 tag.
+- Measured on four real builds of one spec (Sonnet 5 / Opus 5, with and without the plugin): `tests/REPORT.md` §6.10.
+
 ## 0.2.0 — 2026-09-05
 - Research: `research/MODEL_MATRIX.md` (one cited row per current model: Fable 5.1/5, Opus 5, 4.8, 4.7, 4.6, 4.5, Sonnet 5, 4.6, 4.5, Haiku 4.5), 19 new official sources (S45–S63) and a 2026-09-05 re-fetch of every existing source with a provenance index; the hooks reference (S20) is now read in full.
 - Profiles: seven tiers (`fable-5`, `opus-5`, `opus-4x`, `sonnet-5`, `sonnet-4x`, `haiku`, `generic`) plus a shared `_useful-output.md` block injected for every model. Lower tiers carry the cross-model self-check line Anthropic recommends for every model except Opus 5 [S8]; the Opus 5 profile still contains no verification instruction [S1].

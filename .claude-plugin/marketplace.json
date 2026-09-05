@@ -8,7 +8,7 @@
       "name": "claude-model-harness",
       "source": "./plugin",
       "description": "Model identity + official profile injection, completion gate, phantom tool-call detection, tics check, chunk mode, config doctor.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     }
   ]
 }
