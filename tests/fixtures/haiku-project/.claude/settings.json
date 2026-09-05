@@ -1,0 +1,6 @@
+{
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium",
+    "MAX_THINKING_TOKENS": "0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Example Claude Code settings.json fragments the harness recommends. Merge by hand; doctor never writes settings.json. Keys: settings [S27], env [S27, S28], subagent caps [S1].",
+  "enabledPlugins": { "claude-model-harness@claude-model-harness": true },
+  "extraKnownMarketplaces": {
+    "claude-model-harness": { "source": { "source": "github", "repo": "AbdulrahmanAmer/claude-model-harness" } }
+  },
+  "env": {
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "2",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"
+  },
+  "statusLine": { "type": "command", "command": "~/.claude/harness/statusline.sh" }
+}

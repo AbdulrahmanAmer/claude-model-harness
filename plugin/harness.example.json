@@ -1,0 +1,9 @@
+{
+  "_comment": "Harness config. Copy to ~/.claude/harness.json (user) or .claude/harness.json (project). Keys map to plugin/scripts/harness/config.py DEFAULTS; env override HARNESS_GATE__ENABLED=false etc.",
+  "gate": { "enabled": true, "max_blocks_per_prompt": 2, "require_format": true, "max_bullets": 3 },
+  "tics": { "stop_mode": "warn", "files_mode": "warn", "file_globs": ["*.md", "*.txt", "*.rst", "*.mdx"], "max_hits_before_block": 2 },
+  "reminder": { "every_n_prompts": 5 },
+  "chunk": { "scope_lock": "deny", "require_acceptance": true },
+  "identity": { "inject_profile": true, "unknown_ask_model": true },
+  "log": { "enabled": true }
+}

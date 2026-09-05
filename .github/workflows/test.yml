@@ -1,0 +1,29 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - run: python -m pytest -q
+      - name: validate JSON manifests
+        run: |
+          python - <<'EOF2'
+          import json
+          for f in ("plugin/hooks/hooks.json", "plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "plugin/settings.example.json", "plugin/harness.example.json"):
+              json.load(open(f)); print("ok", f)
+          EOF2
+      - name: shell syntax
+        run: for f in plugin/hooks/*.sh plugin/scripts/statusline.sh scripts/install.sh; do sh -n "$f"; done
+      - name: PROMPT.md <= 60 lines
+        run: test "$(wc -l < PROMPT.md)" -le 60

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "claude-model-harness",
+  "owner": { "name": "AbdulrahmanAmer" },
+  "metadata": { "description": "Marketplace for the claude-model-harness plugin (single plugin)." },
+  "plugins": [
+    {
+      "name": "claude-model-harness",
+      "source": "./plugin",
+      "description": "Model identity + official profile injection, completion gate, phantom tool-call detection, tics check, chunk mode, config doctor.",
+      "version": "0.2.0"
+    }
+  ]
+}

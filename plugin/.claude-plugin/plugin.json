@@ -1,0 +1,11 @@
+{
+  "name": "claude-model-harness",
+  "displayName": "Claude Model Harness",
+  "version": "0.2.0",
+  "description": "Tells the model which model it is, loads the matching official Anthropic guidance, gates 'done' claims on real evidence, catches phantom tool calls and writing tics, and adds chunk mode with per-chunk effort. Hooks fail open.",
+  "author": { "name": "AbdulrahmanAmer" },
+  "homepage": "https://github.com/AbdulrahmanAmer/claude-model-harness",
+  "repository": "https://github.com/AbdulrahmanAmer/claude-model-harness",
+  "license": "MIT",
+  "keywords": ["opus-5", "fable-5", "hooks", "completion-gate", "model-identity", "doctor"]
+}
