@@ -269,7 +269,8 @@ def cmd_scope(args, hook):
             return
         # 2. Shell writes to out-of-scope files (`> f`, `>> f`, `tee f`, `sed -i f`, python open(f,'w'), write_text)
         targets = chunkmod.bash_write_targets(cmd)
-        outside = [t for t in targets if not chunkmod.path_in_scope(t, active["paths"])]
+        # Writes outside the project (temp files, home dirs) are not the plan's business; only project files count.
+        outside = [t for t in targets if chunkmod.in_project(t) and not chunkmod.path_in_scope(t, active["paths"])]
         config.log("scope_check", tool="Bash", file=";".join(targets)[-80:], project=str(config.project_dir())[-80:],
                    chunk=active.get("id"), paths=active.get("paths"))
         if outside:

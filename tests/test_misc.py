@@ -248,3 +248,31 @@ def test_profiles_cite_sources():
         assert "[src: S8" in line, name
         fs = doctor.scan_file(ROOT / "plugin" / "profiles" / f"{name}.md", "opus-5")
         assert not [f for f in fs if f.rule in ("R2-thoroughness-cruft", "R3-no-thinking-rule", "R4-forced-status-scaffolding", "R5-word-cap")], name
+
+
+def test_bash_write_detector_ignores_arrows_comparisons_and_heredoc_bodies():
+    """Seen live (Opus 5, 2026-09-05 08:18): a Playwright smoke test in a heredoc was denied because `n => n.textContent`
+    looked like a redirect to `n.textCo`. Arrows, comparisons and text inside heredoc bodies are not shell writes."""
+    from harness import chunks as chunkmod
+    cmd = ("cd $TEMP && python - <<'PYEOF'\nfrom playwright.sync_api import sync_playwright\n"
+           "txt = page.eval_on_selector('h1', 'n => n.textContent')\nassert total >= 3.5 and a -> b.c\n"
+           "x = data > limits.max\nPYEOF\n")
+    assert chunkmod.bash_write_targets(cmd) == []
+    assert chunkmod.bash_write_targets("python -c 'print(1)' 2>&1 | tail -5") == []
+    assert chunkmod.bash_write_targets("grep -q x file.txt && echo ok >> notes.md") == ["notes.md"]
+    # scripted writes inside a heredoc body are still caught: that is where the plan-file bypass hid
+    cmd2 = "python - <<'EOF'\nimport json\nopen('.claude/harness/chunks.json', 'w').write('{}')\nEOF\n"
+    assert chunkmod.bash_write_targets(cmd2) == [".claude/harness/chunks.json"]
+
+
+def test_scope_lock_bash_ignores_writes_outside_the_project(tmp_path):
+    """A temp-file write is not a scope violation; only project files are the plan's business."""
+    proj = tmp_path / "proj"
+    chunkmod.save(chunkmod.new_plan("t", [{"goal": "g", "kind": "feature", "paths": ["app/*.py"], "acceptance": ["pytest"]}]), proj)
+    d = chunkmod.load(proj); d["active"] = 1; chunkmod.save(d, proj)
+    outside = str(tmp_path / "elsewhere" / "smoke.log").replace("\\", "/")
+    r = cli(["scope"], hook_input(hook_event_name="PreToolUse", tool_name="Bash", tool_input={"command": f"python -m pytest -q > {outside}"}))
+    assert r.stdout.strip() == ""
+    r = cli(["scope"], hook_input(hook_event_name="PreToolUse", tool_name="Bash", tool_input={"command": "echo x > README.md"}))
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny" and "README.md" in out["permissionDecisionReason"]

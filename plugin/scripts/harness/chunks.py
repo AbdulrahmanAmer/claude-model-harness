@@ -47,27 +47,42 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 PLAN_FILE_RX = re.compile(r"\.claude[\\/]harness[\\/](chunks|chunk-plan)\.json|(?<![\w.])chunks\.json")
 
 # shell constructs that write a file: `> f`, `>> f`, `tee [-a] f`, `sed -i ... f`, python open('f','w'|'a'), Path('f').write_text
-_BASH_WRITE = [
-    re.compile(r"(?<![<>])>{1,2}\s*[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
-    re.compile(r"\btee\s+(?:-a\s+)?[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
-    re.compile(r"\bsed\s+-i[^\s]*\s+(?:-e\s+)?(?:'[^']*'|\"[^\"]*\"|\S+)\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+_FILE = r"[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"
+# Shell-level writes: only meaningful outside heredoc bodies (a `=>` arrow or `a > b.c` comparison inside an
+# embedded script is not a redirect). `(?<![<>=-])` skips `=>`, `->`, `<>`; `(?!=)` skips `>=`.
+_SHELL_WRITE = [
+    re.compile(r"(?<![<>=-])>{1,2}(?!=)\s*" + _FILE),
+    re.compile(r"\btee\s+(?:-a\s+)?" + _FILE),
+    re.compile(r"\bsed\s+-i[^\s]*\s+(?:-e\s+)?(?:'[^']*'|\"[^\"]*\"|\S+)\s+" + _FILE),
+    re.compile(r"\bcp\s+(?:-\w+\s+)*\S+\s+" + _FILE),
+    re.compile(r"\bmv\s+(?:-\w+\s+)*\S+\s+" + _FILE),
+]
+# Scripted writes: scanned everywhere, heredoc bodies included (that is exactly where the live bypass hid).
+_SCRIPT_WRITE = [
     re.compile(r"open\(\s*[\"']([^\"']+)[\"']\s*,\s*[\"'][wax]"),
     re.compile(r"Path\(\s*[\"']([^\"']+)[\"']\s*\)\.write_(?:text|bytes)"),
-    re.compile(r"\bcp\s+(?:-\w+\s+)*\S+\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
-    re.compile(r"\bmv\s+(?:-\w+\s+)*\S+\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
 ]
+_BASH_WRITE = _SHELL_WRITE + _SCRIPT_WRITE  # kept for callers/tests that inspect the full list
 _NOT_FILES = ("/dev/null", "dev/null")
+_HEREDOC_RX = re.compile(r"<<-?\s*[\"']?(\w+)[\"']?[^\n]*\n(.*?)(?:^\s*\1\s*$|\Z)", re.S | re.M)
+
+
+def strip_heredocs(command: str) -> str:
+    """The shell-visible part of a command: heredoc bodies replaced by a blank line."""
+    return _HEREDOC_RX.sub(lambda m: m.group(0)[: m.group(0).find("\n") + 1] + "\n", command or "")
 
 
 def bash_write_targets(command: str) -> list[str]:
     """File paths a shell command writes to, as far as a regex can tell. Best effort: false negatives are
-    possible (a scripted write hidden behind a variable), false positives are limited to the patterns above."""
+    possible (a scripted write hidden behind a variable); false positives are limited to the patterns above."""
     out: list[str] = []
-    for rx in _BASH_WRITE:
-        for m in rx.finditer(command or ""):
-            t = m.group(1).strip()
-            if t and t not in _NOT_FILES and not t.startswith("$") and t not in out:
-                out.append(t)
+    shell_part = strip_heredocs(command)
+    for rxs, text in ((_SHELL_WRITE, shell_part), (_SCRIPT_WRITE, command or "")):
+        for rx in rxs:
+            for m in rx.finditer(text):
+                t = m.group(1).strip()
+                if t and t not in _NOT_FILES and not t.startswith("$") and t not in out:
+                    out.append(t)
     return out
 
 
@@ -202,6 +217,17 @@ def effort_line(model_id: str | None, effort: str | None, reason: str = "") -> s
     if effort is None:
         return f"effort: not supported on {model_id or 'this model'} [S17, S28] — nothing to set"
     return f"recommended effort: {effort} ({reason}) -> run: /effort {effort}"
+
+
+def in_project(file_path: str, project: Path | None = None) -> bool:
+    """True when the path resolves inside the project directory (temp files, home dirs etc. are not the plan's business)."""
+    try:
+        proj = (project or config.project_dir()).resolve()
+        fp = Path(file_path)
+        (fp if fp.is_absolute() else proj / fp).resolve().relative_to(proj)
+        return True
+    except Exception:
+        return False
 
 
 def path_in_scope(file_path: str, globs: list[str], project: Path | None = None) -> bool:
