@@ -254,6 +254,14 @@ def evaluate(hook_input: dict[str, Any], cfg: dict[str, Any] | None = None) -> d
             else:
                 warnings.append(f"harness: writing tics in final message — {summary}")
 
+    # plan integrity (chunk mode): paths added to the active chunk after activation are reported, never silently accepted
+    if active:
+        added = chunkmod.scope_changes(active)
+        if added:
+            warnings.append(f"harness: chunk {active.get('id')} scope was widened after activation by {added} — the plan is the user's; "
+                            "treat this as a scope change to review")
+            config.log("plan_modified", chunk=active.get("id"), added=added)
+
     # effort mismatch (chunk mode): info only; skipped when the chunk has no effort (model without the parameter [S28])
     if active and isinstance(hook_input.get("effort"), dict):
         lvl = hook_input["effort"].get("level")

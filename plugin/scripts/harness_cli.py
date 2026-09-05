@@ -238,16 +238,55 @@ def cmd_tics_file(args, hook):
     config.log("tics_file_warning", file=fp, hits=len(hits))
 
 
+def _deny(reason: str, mode: str) -> None:
+    if mode == "deny":
+        # documented PreToolUse output [S20, S21]
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                  "permissionDecisionReason": reason}}))
+    else:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": reason}}))
+
+
 def cmd_scope(args, hook):
     cfg = config.load_config()
     mode = cfg.get("chunk.scope_lock", "deny")
-    if mode == "off" or hook.get("tool_name") not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+    tool = hook.get("tool_name")
+    if mode == "off" or tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"):
         return
-    active = chunkmod.active_chunk(chunkmod.load())
-    fp = str((hook.get("tool_input") or {}).get("file_path") or "")
+    inp = hook.get("tool_input") or {}
+    data = chunkmod.load()
+    active = chunkmod.active_chunk(data)
+    if tool == "Bash":
+        cmd = str(inp.get("command") or "")
+        # 1. The plan file is the user's. Seen live: a model widened its own chunk's `paths` with a Bash heredoc
+        #    (the Edit/Write lock never saw it). Only the harness CLI may touch it.
+        if chunkmod.PLAN_FILE_RX.search(cmd) and "harness_cli.py" not in cmd:
+            reason = ("harness scope lock: the chunk plan (.claude/harness/chunks.json) is not yours to edit. If this chunk "
+                      "needs more files, stop and report under 'Blockers:' which paths and why; widening scope is the user's call.")
+            config.log("scope_lock", file="chunks.json", chunk=(active or {}).get("id"), mode=mode, via="bash", command=cmd[:160])
+            return _deny(reason, mode)
+        if not active or not active.get("paths"):
+            return
+        # 2. Shell writes to out-of-scope files (`> f`, `>> f`, `tee f`, `sed -i f`, python open(f,'w'), write_text)
+        targets = chunkmod.bash_write_targets(cmd)
+        outside = [t for t in targets if not chunkmod.path_in_scope(t, active["paths"])]
+        config.log("scope_check", tool="Bash", file=";".join(targets)[-80:], project=str(config.project_dir())[-80:],
+                   chunk=active.get("id"), paths=active.get("paths"))
+        if outside:
+            reason = (f"harness scope lock: this command writes to {outside[:3]}, outside chunk {active['id']} scope {active['paths']}. "
+                      "Finish the chunk first; note the extra change under 'Blockers:' or as a follow-up.")
+            config.log("scope_lock", file=";".join(outside)[:200], chunk=active["id"], mode=mode, via="bash", command=cmd[:160])
+            return _deny(reason, mode)
+        return
+    fp = str(inp.get("file_path") or "")
     # audit line: proves the hook ran and what it saw (project dir comes from CLAUDE_PROJECT_DIR or cwd)
-    config.log("scope_check", tool=hook.get("tool_name"), file=fp[-80:], project=str(config.project_dir())[-80:],
+    config.log("scope_check", tool=tool, file=fp[-80:], project=str(config.project_dir())[-80:],
                chunk=(active or {}).get("id"), paths=(active or {}).get("paths"))
+    if fp and chunkmod.PLAN_FILE_RX.search(fp.replace("\\", "/")):
+        reason = ("harness scope lock: the chunk plan (.claude/harness/chunks.json) is not yours to edit. Report the paths this chunk "
+                  "needs under 'Blockers:'; widening scope is the user's call.")
+        config.log("scope_lock", file=fp, chunk=(active or {}).get("id"), mode=mode, via=tool)
+        return _deny(reason, mode)
     if not active or not active.get("paths"):
         return
     if not fp or chunkmod.path_in_scope(fp, active["paths"]):
@@ -255,12 +294,7 @@ def cmd_scope(args, hook):
     reason = (f"harness scope lock: {fp} is outside chunk {active['id']} scope {active['paths']}. "
               "Finish the chunk first; note the extra change under 'Blockers:' or as a follow-up.")
     config.log("scope_lock", file=fp, chunk=active["id"], mode=mode)
-    if mode == "deny":
-        # documented PreToolUse output [S20, S21]
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                  "permissionDecisionReason": reason}}))
-    else:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": reason}}))
+    _deny(reason, mode)
 
 
 def cmd_doctor(args, hook):
@@ -385,6 +419,7 @@ def cmd_chunk(args, hook):
         for c in data["chunks"]:
             if c["id"] == int(args.id):
                 c["status"] = "active"; data["active"] = c["id"]
+                c["paths_at_activation"] = list(c.get("paths") or [])   # the gate reports any later change to `paths`
                 chunkmod.save(data, project)
                 print(f"chunk {c['id']} active — goal: {c['goal']}\n  scope: {c['paths']}\n  acceptance: {c['acceptance']}\n"
                       f"  {chunkmod.effort_line(data.get('model_id'), c.get('effort'), c.get('effort_reason', ''))}")

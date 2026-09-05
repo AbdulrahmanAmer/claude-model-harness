@@ -43,6 +43,41 @@ from . import config
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
+# the plan file and its source; only the harness CLI may write them (seen live: a model widened its own scope via Bash)
+PLAN_FILE_RX = re.compile(r"\.claude[\\/]harness[\\/](chunks|chunk-plan)\.json|(?<![\w.])chunks\.json")
+
+# shell constructs that write a file: `> f`, `>> f`, `tee [-a] f`, `sed -i ... f`, python open('f','w'|'a'), Path('f').write_text
+_BASH_WRITE = [
+    re.compile(r"(?<![<>])>{1,2}\s*[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+    re.compile(r"\btee\s+(?:-a\s+)?[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+    re.compile(r"\bsed\s+-i[^\s]*\s+(?:-e\s+)?(?:'[^']*'|\"[^\"]*\"|\S+)\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+    re.compile(r"open\(\s*[\"']([^\"']+)[\"']\s*,\s*[\"'][wax]"),
+    re.compile(r"Path\(\s*[\"']([^\"']+)[\"']\s*\)\.write_(?:text|bytes)"),
+    re.compile(r"\bcp\s+(?:-\w+\s+)*\S+\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+    re.compile(r"\bmv\s+(?:-\w+\s+)*\S+\s+[\"']?([\w./\\-]+\.[A-Za-z0-9]{1,6})[\"']?"),
+]
+_NOT_FILES = ("/dev/null", "dev/null")
+
+
+def bash_write_targets(command: str) -> list[str]:
+    """File paths a shell command writes to, as far as a regex can tell. Best effort: false negatives are
+    possible (a scripted write hidden behind a variable), false positives are limited to the patterns above."""
+    out: list[str] = []
+    for rx in _BASH_WRITE:
+        for m in rx.finditer(command or ""):
+            t = m.group(1).strip()
+            if t and t not in _NOT_FILES and not t.startswith("$") and t not in out:
+                out.append(t)
+    return out
+
+
+def scope_changes(chunk: dict[str, Any]) -> list[str]:
+    """Paths added to a chunk after it was activated (the plan is the user's; a model must not widen it)."""
+    before = chunk.get("paths_at_activation")
+    if before is None:
+        return []
+    return [p for p in (chunk.get("paths") or []) if p not in before]
+
 
 def chunks_path(project: Path | None = None) -> Path:
     return (project or config.project_dir()) / ".claude" / "harness" / "chunks.json"

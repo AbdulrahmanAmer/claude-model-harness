@@ -59,6 +59,44 @@ def test_scope_lock_denies_outside_paths(tmp_path, monkeypatch):
     assert "additionalContext" in json.loads(r.stdout)["hookSpecificOutput"]
 
 
+def test_scope_lock_covers_bash_and_the_plan_file(tmp_path, monkeypatch):
+    """Seen live (Sonnet 5, chunks 2 and 7): the model rewrote .claude/harness/chunks.json through a Bash heredoc to add
+    files to its own chunk's `paths`, then edited those files; the Edit/Write lock never saw it."""
+    proj = tmp_path / "proj"
+    chunkmod.save(chunkmod.new_plan("t", [{"goal": "g", "kind": "feature", "paths": ["src/auth/**", "tests/test_auth.py"], "acceptance": ["pytest"]}]), proj)
+    d = chunkmod.load(proj); d["active"] = 1; chunkmod.save(d, proj)
+    def bash(cmd):
+        return cli(["scope"], hook_input(hook_event_name="PreToolUse", tool_name="Bash", tool_input={"command": cmd})).stdout.strip()
+    heredoc = "cd \"%s\" && python3 - <<'EOF'\nimport json\np = \".claude/harness/chunks.json\"\ndata = json.load(open(p))\ndata['chunks'][0]['paths'].append('app/main.py')\njson.dump(data, open(p, 'w'))\nEOF" % proj
+    out = json.loads(bash(heredoc))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny" and "chunk plan" in out["permissionDecisionReason"]
+    assert bash("python3 /x/plugin/scripts/harness_cli.py chunk status") == ""                 # the harness CLI may read/write it
+    assert json.loads(bash("echo x > src/billing/x.py"))["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert bash("echo x > src/auth/login.py") == ""                                             # in scope
+    assert json.loads(bash("python - <<'EOF'\nopen('tests/test_other.py', 'w').write('x')\nEOF"))["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert bash("sed -i 's/a/b/' src/auth/login.py") == "" and bash("python -m pytest -q") == "" and bash("cat src/billing/x.py") == ""
+    # the Edit tool on the plan file is refused too
+    r = cli(["scope"], hook_input(hook_event_name="PreToolUse", tool_name="Edit", tool_input={"file_path": str(proj / ".claude" / "harness" / "chunks.json")}))
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert chunkmod.bash_write_targets("cat a.py | tee out.txt; ls > /dev/null; echo hi") == ["out.txt"]
+
+
+def test_gate_reports_plan_widened_after_activation(transcript, tmp_path):
+    proj = tmp_path / "proj"
+    spec = proj / "plan.json"
+    spec.write_text(json.dumps({"task": "T", "chunks": [{"goal": "a", "kind": "feature", "paths": ["a.py"], "acceptance": ["pytest -q"]}]}))
+    subprocess.run([sys.executable, str(CLI), "chunk", "plan", "--file", str(spec), "--project", str(proj), "--model", "claude-opus-5"], capture_output=True, text=True)
+    subprocess.run([sys.executable, str(CLI), "chunk", "run", "--id", "1", "--project", str(proj)], capture_output=True, text=True)
+    d = chunkmod.load(proj)
+    assert d["chunks"][0]["paths_at_activation"] == ["a.py"]
+    d["chunks"][0]["paths"].append("b.py"); chunkmod.save(d, proj)          # what the model did via Bash
+    from harness import stop_gate
+    t = transcript([("user", "x"), ("text", "still working")])
+    out = stop_gate.evaluate(hook_input(transcript_path=str(t), last_assistant_message="still working"), None)
+    assert "decision" not in out and "scope was widened after activation by ['b.py']" in out["systemMessage"]
+    assert chunkmod.scope_changes(d["chunks"][0]) == ["b.py"]
+
+
 def test_effort_recommendation_unknown_model_defaults_high():
     eff, why = chunkmod.recommend_effort("feature", 3, True)
     assert eff == "high" and "[S14" in why                      # default high on every model that supports effort [S14, S28]
