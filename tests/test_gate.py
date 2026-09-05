@@ -114,6 +114,45 @@ def test_chunk_acceptance_required_and_marks_done(transcript, tmp_path):
     assert chunkmod.load(proj)["chunks"][0]["status"] == "done" and chunkmod.load(proj)["active"] is None
 
 
+def test_chunk_acceptance_latest_run_wins(transcript, tmp_path):
+    """Seen live (Opus 5, chunk 1): acceptance failed, the model fixed the bug, re-ran it green and claimed done — the
+    old rule blocked because *any* run in the turn had failed. Only the latest run counts, in both directions."""
+    proj = tmp_path / "proj"
+    chunkmod.save(chunkmod.new_plan("t", [{"goal": "auth", "kind": "feature", "paths": ["app/auth.py"], "acceptance": ["python -m pytest tests/test_auth.py -q"]}]), proj)
+    d = chunkmod.load(proj); d["active"] = 1; chunkmod.save(d, proj)
+    acc = {"command": "python -m pytest tests/test_auth.py -q 2>&1 | tail -20"}
+    t = transcript([("user", "run chunk 1"), ("tool", "Bash", acc, "FAILED tests/test_auth.py::test_lock\n1 failed, 39 passed in 33.32s"),
+                    ("tool", "Edit", {"file_path": "app/auth.py"}, "ok"), ("tool", "Bash", acc, "....\n40 passed in 33.77s"), ("text", GOOD)])
+    out = ev(hook_input(transcript_path=str(t), last_assistant_message=GOOD))
+    assert "decision" not in out and "marked done" in out["systemMessage"]
+    assert chunkmod.load(proj)["chunks"][0]["status"] == "done"
+    # the reverse order (green first, then a failing re-run) is still blocked
+    d = chunkmod.load(proj); d["active"] = 1; d["chunks"][0]["status"] = "active"; chunkmod.save(d, proj)
+    t2 = transcript([("user", "x"), ("tool", "Bash", acc, "40 passed in 33.77s"), ("tool", "Bash", acc, "1 failed, 39 passed"), ("text", GOOD)], name="t2.jsonl")
+    out = ev(hook_input(prompt_id="p-2", transcript_path=str(t2), last_assistant_message=GOOD))
+    assert out["decision"] == "block" and "latest run shows failures" in out["reason"]
+
+
+def test_evidence_survives_a_format_block_retry(transcript, tmp_path):
+    """Seen live (Sonnet 5, chunk 2): format block, then the restated message was blocked for 'no evidence in this
+    turn' because Claude Code's 'Stop hook feedback' user entry had been treated as a new prompt."""
+    proj = tmp_path / "proj"
+    chunkmod.save(chunkmod.new_plan("t", [{"goal": "g", "kind": "feature", "paths": ["app/x.py"], "acceptance": ["python -m pytest tests/test_x.py -q"]}]), proj)
+    d = chunkmod.load(proj); d["active"] = 1; chunkmod.save(d, proj)
+    bad = "Done, feature is implemented.\n- a\n- b\n- c\n- d\n- e\nVerification: pytest → 12 passed\nBlockers: none"
+    t = transcript([("user", "run chunk 1"), ("tool", "Bash", {"command": "python -m pytest tests/test_x.py -q"}, "12 passed in 1.0s"), ("text", bad)])
+    out = ev(hook_input(transcript_path=str(t), last_assistant_message=bad))
+    assert out["decision"] == "block" and "Completion format" in out["reason"]
+    # Claude Code appends the block reason as a user entry, then the model restates with no new tool calls
+    from conftest import make_transcript
+    steps = [("user", "run chunk 1"), ("tool", "Bash", {"command": "python -m pytest tests/test_x.py -q"}, "12 passed in 1.0s"), ("text", bad),
+             ("user", "Stop hook feedback:\n" + out["reason"]), ("text", GOOD)]
+    t2 = make_transcript(tmp_path / "t2.jsonl", steps)
+    out2 = ev(hook_input(transcript_path=str(t2), last_assistant_message=GOOD))
+    assert "decision" not in out2 and "marked done" in out2["systemMessage"]
+    assert chunkmod.load(proj)["chunks"][0]["status"] == "done"
+
+
 def test_effort_mismatch_is_info_only(transcript, tmp_path):
     proj = tmp_path / "proj"
     chunkmod.save(chunkmod.new_plan("t", [{"goal": "g", "kind": "feature", "paths": [], "acceptance": []}], "claude-opus-5"), proj)

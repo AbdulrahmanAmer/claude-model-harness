@@ -225,8 +225,10 @@ def evaluate(hook_input: dict[str, Any], cfg: dict[str, Any] | None = None) -> d
             if acc and not ran:
                 reasons.append(f"Chunk {active.get('id')} is active; its acceptance command(s) {acc} did not run this turn. "
                                "Run them as real tool calls and quote the result, or report 'Blockers:'.")
-            elif ran and any(FAIL_TOKENS.search(c.get("result") or "") for c in ran):
-                reasons.append(f"Chunk {active.get('id')} acceptance ran but shows failures. Do not claim the chunk done; report under 'Blockers:'.")
+            elif ran and FAIL_TOKENS.search(ran[-1].get("result") or ""):
+                # judge the LATEST acceptance run only: fail -> fix -> re-run green is the normal path and must pass
+                reasons.append(f"Chunk {active.get('id')} acceptance ran but its latest run shows failures. Do not claim the chunk done; "
+                               "fix and re-run it, or report the failure under 'Blockers:'.")
         # G5 format
         if cfg.get("gate.require_format", True) and not reasons:
             probs = check_format(text, cfg)

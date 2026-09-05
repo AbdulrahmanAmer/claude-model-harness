@@ -52,13 +52,25 @@ def _content(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+HOOK_FEEDBACK_PREFIXES = ("Stop hook feedback", "[harness completion gate")
+
+
 def is_human_turn(entry: dict[str, Any]) -> bool:
+    """A user entry that starts a new prompt. Tool results are not; neither is the Stop-hook feedback Claude Code
+    inserts as a user entry when this gate blocks ("Stop hook feedback: [harness completion gate 1/2] …"): the
+    retry belongs to the same prompt, so evidence gathered before the block still counts (seen live: a format-only
+    block was followed by "no evidence in this turn" because the restated message had no new tool calls)."""
     if entry.get("type") != "user":
         return False
     blocks = _content(entry)
     if not blocks:
         return False
-    return not any(b.get("type") == "tool_result" for b in blocks)
+    if any(b.get("type") == "tool_result" for b in blocks):
+        return False
+    text = "".join(str(b.get("text", "")) for b in blocks if b.get("type") == "text").lstrip()
+    if text.startswith(HOOK_FEEDBACK_PREFIXES):
+        return False
+    return True
 
 
 def current_turn(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
