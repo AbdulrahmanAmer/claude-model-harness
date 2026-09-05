@@ -14,8 +14,8 @@ Why (cited in `${CLAUDE_PLUGIN_ROOT}/scripts/harness/chunks.py`): plan once at t
 2. Write a plan JSON to `.claude/harness/chunk-plan.json` with this shape — 3–8 chunks, each finishable in a handful of tool calls, each with a runnable acceptance command:
    {"task": "<task>", "chunks": [{"goal": "...", "kind": "mechanical|feature|refactor|debug|research", "paths": ["src/x/**", "tests/test_x.py"], "acceptance": ["pytest tests/test_x.py -q"]}]}
    Rules: `paths` are project-relative globs and define the scope lock. `acceptance` must be a real command that exercises the goal (tests/build/lint); a chunk with no runnable check gets `kind: research` and a `git diff --stat` acceptance. Kinds: mechanical (rename, config, single file), feature, refactor (multi-file), debug (unknown cause), research.
-3. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/harness_cli.py chunk plan --file .claude/harness/chunk-plan.json`
-   It writes `.claude/harness/chunks.json`, records the detected model, and assigns each chunk a recommended effort for that model (or `n/a` when the model has no effort parameter) with the cited reason.
+3. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/harness_cli.py chunk plan --file .claude/harness/chunk-plan.json --model <your exact model ID>`
+   `<your exact model ID>` is the string from the MODEL IDENTITY line, or, when that line says the model was not detectable, the model named in your own system prompt (for example `claude-sonnet-5`). Do not guess: if neither names a model, omit `--model`. The command writes `.claude/harness/chunks.json`, records the model, and assigns each chunk a recommended effort for that model (or `n/a` when the model has no effort parameter) with the cited reason.
 4. Show the resulting status table to the user and stop. Do not start a chunk until the user says which one.
 
 ## `run <n>`

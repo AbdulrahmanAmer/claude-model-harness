@@ -182,6 +182,11 @@ def cmd_identity(args, hook):
 def cmd_gate(args, hook):
     config.log("stop", stop_hook_active=hook.get("stop_hook_active"), prompt=hook.get("prompt_id"))
     d = detect_model.detect(hook)                       # tier -> per-tier gate defaults (config.TIER_DEFAULTS)
+    if d["model_id"] and d["source"].startswith("transcript"):
+        # Headless sessions never get a hook `model` field [S20]; the transcript is the first place the model shows
+        # up. Cache it (medium confidence) so CLI calls made from the model's own Bash tool (`chunk plan`, `status`,
+        # `doctor`) know the model too. A hook-provided model always overwrites this.
+        detect_model.write_cache(d["model_id"], d["source"], hook.get("session_id"))
     out = stop_gate.evaluate(hook, config.load_config(d["profile"]))
     if out:
         print(json.dumps(out))
@@ -368,6 +373,8 @@ def cmd_chunk(args, hook):
     if sub == "plan":
         spec = json.loads(Path(args.file).read_text(encoding="utf-8")) if args.file else json.loads(sys.stdin.read())
         model_id = args.model or detect_model.detect(hook)["model_id"]     # per-model effort table [S28, S14]
+        if not model_id:
+            print("note: model unknown to the harness (pass --model <id>); effort defaults to high for every chunk [S14, S28]")
         plan = chunkmod.new_plan(spec.get("task", ""), spec.get("chunks", []), model_id)
         chunkmod.save(plan, project)
         data = plan

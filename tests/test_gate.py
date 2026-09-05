@@ -179,6 +179,24 @@ def test_gate_cli_detects_tier_from_cache(transcript, tmp_path):
     assert '"profile": "haiku"' in log
 
 
+def test_gate_caches_transcript_detected_model_for_cli_calls(transcript, tmp_path):
+    """Seen live: `/chunk plan` ran from the model's Bash tool before any hook had cached a model, so chunks.json got
+    model=None and every chunk the unknown-model effort. The gate now caches a transcript-detected model."""
+    from harness import detect_model
+    from harness.config import model_cache_path
+    t = transcript([("user", "x"), ("text", "working")], model="claude-sonnet-5")
+    r = subprocess.run([sys.executable, str(ROOT / "plugin" / "scripts" / "harness_cli.py"), "gate"],
+                       input=json.dumps(hook_input(transcript_path=str(t), last_assistant_message="working")), capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0
+    cache = json.loads(model_cache_path().read_text())
+    assert cache["model_id"] == "claude-sonnet-5" and cache["source"].startswith("transcript")
+    assert detect_model.detect({})["model_id"] == "claude-sonnet-5"                     # what `chunk plan` with no --model now sees
+    proj = tmp_path / "proj"; spec = proj / "plan.json"
+    spec.write_text(json.dumps({"task": "T", "chunks": [{"goal": "a", "kind": "mechanical", "paths": ["a.py"], "acceptance": ["pytest -q"]}]}))
+    out = subprocess.run([sys.executable, str(ROOT / "plugin" / "scripts" / "harness_cli.py"), "chunk", "plan", "--file", str(spec), "--project", str(proj)], capture_output=True, text=True).stdout
+    assert "model: claude-sonnet-5" in out and "effort=medium" in out
+
+
 def test_stop_hook_shell_blocks(transcript):
     t = transcript([("user", "fix"), ("text", "Done.")])
     r = subprocess.run(["sh", str(ROOT / "plugin" / "hooks" / "stop-gate.sh")],
