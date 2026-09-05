@@ -33,6 +33,36 @@ if sys.version_info < (3, 10):
         pass
     sys.exit(0)
 
+HOOK_COMMANDS = ("identity", "gate", "reminder", "tics-file", "scope", "status")
+
+
+def _start_watchdog(seconds: float) -> None:
+    """In-process timeout for hook commands. macOS ships no `timeout(1)` and the shell wrapper only uses it
+    when present, so the CLI bounds itself: after `seconds` it logs `cli_timeout` and exits 124 with no
+    stdout — Claude Code then sees a non-zero, non-2 exit and treats it as a non-blocking error [S20]."""
+    import threading
+
+    def _fire() -> None:
+        try:
+            log_path = Path(os.environ.get("HARNESS_HOME") or (Path.home() / ".claude")) / "harness.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"event": "cli_timeout", "seconds": seconds, "cmd": sys.argv[1:2]}) + "\n")
+        except Exception:
+            pass
+        os._exit(124)
+
+    t = threading.Timer(seconds, _fire)
+    t.daemon = True
+    t.start()
+
+
+if len(sys.argv) > 1 and sys.argv[1] in HOOK_COMMANDS:
+    try:
+        _start_watchdog(float(os.environ.get("HARNESS_TIMEOUT", "12")))
+    except Exception:
+        pass
+
 # Hook stdin/stdout are UTF-8 (Claude Code is a Node process). On Windows a piped Python stdio
 # defaults to the locale code page (cp1252), and printing "≤" or "→" raised UnicodeEncodeError,
 # which the fail-open wrapper swallowed — so every hook printed nothing. Force UTF-8 + LF.

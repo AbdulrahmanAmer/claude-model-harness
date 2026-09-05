@@ -10,6 +10,7 @@ HARNESS_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd
 HARNESS_LOGDIR="${HARNESS_HOME:-${HOME:-/tmp}/.claude}"
 HARNESS_LOG="$HARNESS_LOGDIR/harness.log"
 HARNESS_TIMEOUT="${HARNESS_TIMEOUT:-12}"   # inner cap on the Python; hooks.json timeouts are the outer cap
+export HARNESS_TIMEOUT                      # the CLI runs its own watchdog with the same value (no timeout(1) on macOS)
 
 hlog() { # hlog <event> <detail> — failure paths only (spawns date/tr/cut)
   mkdir -p "$HARNESS_LOGDIR" 2>/dev/null || return 0

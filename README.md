@@ -38,10 +38,10 @@ sh scripts/install.sh --repo AbdulrahmanAmer/claude-model-harness      # or: sh 
 ```
 Under the hood (documented commands [S25, S26, S24]):
 ```
-claude plugin marketplace add AbdulrahmanAmer/claude-model-harness
+claude plugin marketplace add https://github.com/AbdulrahmanAmer/claude-model-harness.git   # the owner/repo shorthand also works where git can use SSH
 claude plugin install claude-model-harness@claude-model-harness -s user
 ```
-or inside a session: `/plugin marketplace add AbdulrahmanAmer/claude-model-harness` then `/plugin install claude-model-harness@claude-model-harness`. For development: `claude --plugin-dir ./plugin`.
+or inside a session: `/plugin marketplace add https://github.com/AbdulrahmanAmer/claude-model-harness.git` then `/plugin install claude-model-harness@claude-model-harness`. For development: `claude --plugin-dir ./plugin`.
 
 Start a new session. The first context contains `MODEL IDENTITY: You are running as <model> …` followed by the matching profile. Check hooks with `/hooks`.
 
@@ -113,7 +113,7 @@ harness status
 | `pre-tool-use.sh` | PreToolUse (`Write\|Edit\|…`) | Chunk-mode scope lock | `permissionDecision: deny` [S20] |
 | `post-tool-use.sh` | PostToolUse (`Write\|Edit\|…`) | Tics warning on `.md/.txt/.rst` written to disk | `additionalContext` (cannot block) [S20] |
 
-All hooks: POSIX sh, `set -u`, `timeout`, exit 0 on any failure, structured log at `~/.claude/harness.log`. A broken hook never blocks a session (see `tests/test_failopen.py`). On Windows, Claude Code runs command hooks in Git Bash (and only falls back to PowerShell when Git Bash is missing) [S20], so Git Bash is required there; process creation under it is slow, which is why the wrapper spawns exactly one `timeout` and one Python.
+All hooks: POSIX sh, `set -u`, exit 0 on any failure, structured log at `~/.claude/harness.log`. The Python CLI bounds itself with an in-process watchdog (`HARNESS_TIMEOUT`, default 12 s; the shell also uses `timeout(1)` where it exists, which macOS lacks). A broken or hung hook never blocks a session (see `tests/test_failopen.py`). On Windows, Claude Code runs command hooks in Git Bash (and only falls back to PowerShell when Git Bash is missing) [S20], so Git Bash is required there; process creation under it is slow, which is why the wrapper spawns exactly one `timeout` and one Python.
 
 Skills: `/harness-status` (what the harness detected and what to do next), `/chunk` (chunk mode), `/harness-doctor` (lint instruction files for this model).
 

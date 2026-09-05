@@ -92,11 +92,29 @@ def test_gate_disabled_by_env():
 
 
 def test_timeout_never_blocks(tmp_path):
-    # simulate a hung CLI by pointing CLAUDE_PLUGIN_ROOT at a copy whose CLI sleeps
-    import shutil
+    """A hung gate must never hold the turn: the shell `timeout` (where it exists) or the CLI's own watchdog
+    (everywhere, incl. macOS which ships no timeout(1)) ends it, the hook exits 0 with no output, and the log says so."""
+    import shutil, time
     root = tmp_path / "plug"
     shutil.copytree(ROOT / "plugin", root)
-    (root / "scripts" / "harness_cli.py").write_text("import time; time.sleep(30)\n")
-    r = run_hook("stop-gate.sh", json.dumps(hook_input(last_assistant_message="Done.")), env_extra={"CLAUDE_PLUGIN_ROOT": str(root), "HARNESS_TIMEOUT": "1"})
+    (root / "scripts" / "harness" / "stop_gate.py").write_text("import time\ndef evaluate(hook_input, cfg=None):\n    time.sleep(30)\n    return {}\n")
+    t0 = time.time()
+    r = run_hook("stop-gate.sh", json.dumps(hook_input(last_assistant_message="Done.")), env_extra={"CLAUDE_PLUGIN_ROOT": str(root), "HARNESS_TIMEOUT": "2"})
     assert r.returncode == 0 and r.stdout.strip() == ""
-    assert "cli_nonzero" in log_text()
+    assert time.time() - t0 < 25
+    log = log_text()
+    assert "cli_timeout" in log or "cli_nonzero" in log, log
+
+
+def test_watchdog_fires_without_external_timeout(tmp_path):
+    """The Python watchdog alone (no `timeout` binary involved): exit 124, no stdout, `cli_timeout` logged."""
+    import shutil, subprocess as sp, sys as _sys, time
+    root = tmp_path / "plug"
+    shutil.copytree(ROOT / "plugin", root)
+    (root / "scripts" / "harness" / "stop_gate.py").write_text("import time\ndef evaluate(hook_input, cfg=None):\n    time.sleep(30)\n    return {}\n")
+    env = dict(os.environ); env["HARNESS_TIMEOUT"] = "2"
+    t0 = time.time()
+    r = sp.run([_sys.executable, str(root / "scripts" / "harness_cli.py"), "gate"], input=json.dumps(hook_input(last_assistant_message="Done.")),
+               capture_output=True, text=True, env=env, timeout=40)
+    assert r.returncode == 124 and r.stdout.strip() == "" and time.time() - t0 < 25
+    assert "cli_timeout" in log_text()

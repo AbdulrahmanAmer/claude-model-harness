@@ -51,10 +51,25 @@ if [ "$INSTALL" -eq 0 ]; then
   say "(--selftest-only: skipping marketplace/install steps)"
 elif [ "$LOCAL" -eq 1 ]; then
   say "Adding local marketplace: $HERE"
-  claude plugin marketplace add "$HERE" >/dev/null 2>&1 || say "(marketplace already added or add failed — continuing)"
+  if ! ADD_OUT=$(claude plugin marketplace add "$HERE" 2>&1); then
+    if printf '%s' "$ADD_OUT" | grep -qi "already"; then
+      say "  (marketplace already added; updating)"; claude plugin marketplace update "$MARKET" >/dev/null 2>&1 || true
+    else
+      say "  marketplace add failed:"; printf '%s\n' "$ADD_OUT" | tail -3 | sed 's/^/    /'
+    fi
+  fi
 else
-  say "Adding GitHub marketplace: $REPO"
-  claude plugin marketplace add "$REPO" >/dev/null 2>&1 || say "(marketplace already added or add failed — continuing)"
+  # Full HTTPS URL rather than the owner/repo shorthand: the shorthand can resolve to an SSH clone
+  # (git@github.com), which fails on machines without an SSH key; HTTPS URLs are documented [S25].
+  REPO_URL="https://github.com/$REPO.git"
+  say "Adding GitHub marketplace: $REPO_URL"
+  if ! ADD_OUT=$(claude plugin marketplace add "$REPO_URL" 2>&1); then
+    if printf '%s' "$ADD_OUT" | grep -qi "already"; then
+      say "  (marketplace already added; updating)"; claude plugin marketplace update "$MARKET" >/dev/null 2>&1 || true
+    else
+      say "  marketplace add failed:"; printf '%s\n' "$ADD_OUT" | tail -3 | sed 's/^/    /'
+    fi
+  fi
 fi
 
 if [ "$INSTALL" -eq 1 ]; then

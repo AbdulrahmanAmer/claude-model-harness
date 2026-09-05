@@ -4,7 +4,7 @@ A Claude Code plugin that tells the model which model it is, loads Anthropic's o
 
 **Install**
 ```
-claude plugin marketplace add AbdulrahmanAmer/claude-model-harness
+claude plugin marketplace add https://github.com/AbdulrahmanAmer/claude-model-harness.git
 claude plugin install claude-model-harness@claude-model-harness -s user
 ```
 or paste into Claude Code: *Install and configure https://github.com/AbdulrahmanAmer/claude-model-harness per its README, run its doctor on this project, show me the diff, and apply only after I approve.*
